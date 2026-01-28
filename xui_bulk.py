@@ -25,8 +25,8 @@ def clear_screen():
 
 def print_header():
     console.print(Panel(
-        "[bold cyan]X-UI Bulk Smart Manager[/bold cyan]",
-        subtitle="[dim]مدیریت هوشمند کاربران[/dim]",
+        "[bold cyan]مدیریت هوشمند کاربران X-UI[/bold cyan]",
+        subtitle="[dim]نسخه حرفه‌ای و اصلاح شده[/dim]",
         border_style="green",
         padding=(0, 2)
     ))
@@ -42,11 +42,11 @@ def find_database():
     if os.path.exists(DEFAULT_DB_PATH): return DEFAULT_DB_PATH
     files = [f for f in os.listdir('.') if f.endswith('.db')]
     if not files:
-        console.print("[bold red]❌ دیتابیس یافت نشد ![/bold red]")
+        console.print("[bold red]❌ دیتابیس یافت نشد![/bold red]")
         sys.exit(1)
     if len(files) == 1: return files[0]
     
-    console.print(f"[yellow]چند فایل پیدا شد. لطفا انتخاب کنید :[/yellow]")
+    console.print(f"[yellow]چند فایل پیدا شد. لطفا انتخاب کنید:[/yellow]")
     for i, f in enumerate(files):
         console.print(f"[{i+1}] {f}")
     choice = IntPrompt.ask("شماره فایل", choices=[str(i+1) for i in range(len(files))])
@@ -57,12 +57,12 @@ def create_backup(db_path):
     backup_path = f"{db_path}.backup_{timestamp}"
     try:
         shutil.copy(db_path, backup_path)
-        console.print(f"[green]✔ بکاپ گرفته شد :[/green] [dim]{backup_path}[/dim]")
+        console.print(f"[green]✔ بکاپ امنیتی :[/green] [dim]{backup_path}[/dim]")
     except Exception as e:
-        console.print(f"[bold red]❌ خطا در بکاپ : {e}[/bold red]"); sys.exit(1)
+        console.print(f"[bold red]❌ خطا در بکاپ: {e}[/bold red]"); sys.exit(1)
 
 def restart_panel():
-    if Confirm.ask("\n[bold yellow]🔄 آیا پنل ریستارت شود؟[/bold yellow]"):
+    if Confirm.ask("\n[bold yellow]🔄 آیا پنل ریستارت شود ؟[/bold yellow]"):
         try:
             with console.status("[bold green]در حال ریستارت سرویس...[/bold green]"):
                 cmd = "x-ui restart"
@@ -91,7 +91,7 @@ def bytes_to_gb(b):
 def select_client_interactive(clients, real_usage):
     while True:
         console.print(Panel("اینتر بزنید تا همه نمایش داده شوند یا جستجو کنید", title="جستجو", border_style="blue"))
-        search_query = Prompt.ask("جستجو").strip().lower()
+        search_query = Prompt.ask("عبارت جستجو").strip().lower()
         
         filtered = []
         for idx, c in enumerate(clients):
@@ -101,7 +101,6 @@ def select_client_interactive(clients, real_usage):
         if not filtered:
             console.print("[red]یافت نشد.[/red]"); continue
 
-        # ساخت جدول ساده
         table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
         table.add_column("#", justify="center", width=4)
         table.add_column("ایمیل", justify="left", style="white")
@@ -120,7 +119,7 @@ def select_client_interactive(clients, real_usage):
             table.add_row(str(local_idx+1), email, exp, usage_str, status)
 
         console.print(table)
-        console.print(f"[dim]تعداد نتایج: {len(filtered)}[/dim]")
+        console.print(f"[dim]تعداد: {len(filtered)}[/dim]")
 
         choice = IntPrompt.ask("\nشماره ردیف (0 بازگشت)", default=0)
         if choice == 0: return None
@@ -197,12 +196,12 @@ def main():
         console.print(f"[red]خطا: {e}[/red]"); sys.exit(1)
 
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
-    table.add_column("کد", justify="center", style="bold yellow")
+    table.add_column("کد", justify="center", style="bold yellow", width=4)
     table.add_column("نام اینباند", justify="right", style="white")
     table.add_column("جزئیات", justify="right", style="green")
 
-    table.add_row("0", "خروج", "---")
-    table.add_row("1", "همه اینباندها", "کل سرور")
+    table.add_row("0", "خروج", "خروج از برنامه")
+    table.add_row("1", "کل سرور", "همه اینباندها")
     table.add_section()
 
     menu_map = {} 
@@ -213,11 +212,11 @@ def main():
         except: client_count = 0
         
         icon = get_protocol_icon(row['protocol'])
-        
-        remark_str = f"{icon} {row['remark']}"
-        detail_str = f"Port: {row['port']} | {client_count} User"
-        
-        table.add_row(str(menu_idx), remark_str, detail_str)
+        table.add_row(
+            str(menu_idx), 
+            f"{icon} {row['remark']}", 
+            f"Port: {row['port']} | {client_count} User"
+        )
         menu_map[menu_idx] = row['id']
         
     console.print(Panel(table, title="منوی اصلی", border_style="cyan"))
@@ -247,6 +246,11 @@ def main():
             target_email = selected_client['email']
 
     bulk_updates = {} 
+    time_scenario = 0
+    traffic_scenario = 0
+    days_to_add = 0
+    gb_to_add = 0.0
+
     if target_email:
         final_client = None
         for row in inbounds:
@@ -254,6 +258,7 @@ def main():
             cs = json.loads(row['settings']).get('clients', [])
             found = next((c for c in cs if c['email'] == target_email), None)
             if found: final_client = found; break
+        
         if final_client:
             bulk_updates = process_single_user_menu(final_client, real_usage)
             if not bulk_updates: main(); return
@@ -262,20 +267,16 @@ def main():
         console.print(Panel("تنظیمات گروهی (Bulk Actions)", border_style="cyan"))
         
         console.print("[bold yellow]🕒 سناریو زمان :[/bold yellow]")
-        console.print("[0] بدون تغییر")
-        console.print("[1] همه")
-        console.print("[2] فقط تمدید فعال‌ها")
-        console.print("[3] فقط احیای منقضی‌ها")
+        console.print("[0] بدون تغییر | [1] همه | [2] فقط تمدید فعال‌ها | [3] فقط احیای منقضی‌ها")
         time_scenario = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3"], default=0)
-        days_to_add = IntPrompt.ask(" >> تعداد روز", default=30) if time_scenario != 0 else 0
+        if time_scenario != 0:
+            days_to_add = IntPrompt.ask(" >> تعداد روز", default=30)
 
         console.print("\n[bold yellow]💾 سناریو حجم :[/bold yellow]")
-        console.print("[0] بدون تغییر")
-        console.print("[1] همه")
-        console.print("[2] فقط تمام شده‌ها")
-        console.print("[3] فقط حجم‌دارها")
+        console.print("[0] بدون تغییر | [1] همه | [2] فقط تمام شده‌ها | [3] فقط حجم‌دارها")
         traffic_scenario = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3"], default=0)
-        gb_to_add = FloatPrompt.ask(" >> مقدار GB", default=0.0) if traffic_scenario != 0 else 0
+        if traffic_scenario != 0:
+            gb_to_add = FloatPrompt.ask(" >> مقدار GB", default=0.0)
 
     ms_to_add = days_to_add * 86400000
     bytes_to_add = int(gb_to_add * 1073741824)
@@ -305,6 +306,7 @@ def main():
                             client['totalGB'] = bulk_updates['totalGB']
                             client['total'] = bulk_updates['totalGB']; modified = True
                         if 'RESET_USAGE' in bulk_updates: reset_usage_list.append(email)
+                    
                     elif not target_email:
                         expiry = client.get('expiryTime', 0)
                         is_expired = 0 < expiry < current_time
@@ -321,6 +323,7 @@ def main():
                                 client['totalGB'] = total + bytes_to_add
                                 client['total'] = client['totalGB']; modified = True
 
+                    # 3. فعال‌سازی هوشمند
                     new_exp = client.get('expiryTime', 0)
                     new_tot = client.get('totalGB', client.get('total', 0))
                     curr_used = 0 if email in reset_usage_list else real_usage.get(email, 0)
@@ -347,7 +350,7 @@ def main():
         title="گزارش", border_style="green"
     ))
     
-    if Confirm.ask("ذخیره در دیتابیس ؟"):
+    if Confirm.ask("ذخیره در دیتابیس؟"):
         try:
             for iid, js in inbound_json_updates.items(): cursor.execute("UPDATE inbounds SET settings = ? WHERE id = ?", (js, iid))
             cursor.executemany("UPDATE client_traffics SET expiry_time=?, total=?, enable=? WHERE email=?", sql_updates)
