@@ -198,10 +198,13 @@ def main():
     except Exception as e:
         console.print(f"[red]خطا: {e}[/red]"); sys.exit(1)
 
-    menu_text = Text()
-    menu_text.append("  [0] خروج از برنامه\n", style="bold red")
-    menu_text.append("  [1] 🌐 اعمال روی کل سرور (همه اینباندها)\n", style="bold green")
-    menu_text.append("  " + "-"*40 + "\n", style="dim")
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", pad_edge=False, collapse_padding=True)
+    table.add_column("گزینه", justify="center", style="bold yellow", width=6)
+    table.add_column("نام اینباند / بخش", justify="right", style="white", width=30)
+    table.add_column("جزئیات (پورت | کاربر)", justify="right", style="green", width=25)
+    table.add_row("0", "خروج از برنامه", "---")
+    table.add_row("1", "اعمال روی کل سرور", "همه اینباندها")
+    table.add_section() # خط جداکننده
     
     menu_map = {} 
     for idx, row in enumerate(inbounds):
@@ -209,17 +212,21 @@ def main():
         try:
             client_count = len(json.loads(row['settings']).get('clients', []))
         except: client_count = 0
+
+        icon = get_protocol_icon(row['protocol'])
         
-        proto = row['protocol']
-        icon = get_protocol_icon(proto)
-        line = f"  [{menu_idx}] {icon} {row['remark']}  [dim]({client_count} کاربر | پورت {row['port']})[/dim]\n"
-        menu_text.append(line, style="white")
+        table.add_row(
+            str(menu_idx), 
+            f"{icon} {row['remark']}", 
+            f"Port: {row['port']} | {client_count} User"
+        )
         menu_map[menu_idx] = row['id']
         
-    console.print(Panel(menu_text, title="لیست اینباندها", border_style="cyan", title_align="right"))
+    console.print(Panel(table, title="[bold white]منوی اصلی مدیریت[/bold white]", border_style="cyan", padding=(1, 1)))
     
     valid_choices = ["0", "1"] + [str(k) for k in menu_map.keys()]
-    main_choice = IntPrompt.ask("انتخاب کنید", choices=valid_choices, default=0)
+    console.print(f"[bold cyan] انتخاب کنید [0/{len(valid_choices)-1}][/bold cyan]", end="")
+    main_choice = IntPrompt.ask("", choices=valid_choices, default=0)
     
     if main_choice == 0: sys.exit(0)
     
