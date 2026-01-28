@@ -34,7 +34,7 @@
 دستور زیر را در ترمینال سرور خود (با دسترسی root) اجرا کنید :
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/MrMstafa/3xui-bulk/main/3xui-bulk.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/MrMstafa/xui-bulk/main/xui-bulk.sh)
 ```
 
 
