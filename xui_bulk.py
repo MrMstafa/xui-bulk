@@ -14,8 +14,11 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+from rich.layout import Layout
+from rich.text import Text
 from rich import box
 
+# --- تنظیمات ---
 DEFAULT_DB_PATH = "/etc/x-ui/x-ui.db"
 console = Console()
 
@@ -23,13 +26,19 @@ def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def print_header():
-    console.print(Panel.fit(
-        "[bold cyan]مدیریت پیشرفته کاربران X-UI[/bold cyan]\n"
-        "[dim]قابلیت جستجو، مدیریت تکی و گروهی با منطق هوشمند[/dim]",
+    console.print(Panel(
+        Text("مدیریت هوشمند کاربران X-UI (نسخه حرفه‌ای)", justify="center", style="bold cyan"),
+        subtitle="[dim]طراحی شده برای پنل‌های سنایی و علیرضا[/dim]",
         border_style="green",
-        padding=(0, 2),
-        subtitle="XUI-Bulk Manager"
+        padding=(0, 2)
     ))
+
+def get_protocol_icon(protocol):
+    icons = {
+        "vmess": "🟣", "vless": "🔵", "trojan": "🟢", 
+        "shadowsocks": "🟠", "dokodemo-door": "🚪", "socks": "🧦", "http": "🌐"
+    }
+    return icons.get(protocol, "📡")
 
 def find_database():
     if os.path.exists(DEFAULT_DB_PATH): return DEFAULT_DB_PATH
@@ -38,13 +47,11 @@ def find_database():
         console.print("[bold red]❌ دیتابیس یافت نشد![/bold red]")
         sys.exit(1)
     if len(files) == 1: return files[0]
-    
-    table = Table(title="انتخاب دیتابیس", box=box.ROUNDED, header_style="bold magenta")
-    table.add_column("ردیف", justify="center")
-    table.add_column("نام فایل", justify="right")
-    for i, f in enumerate(files): table.add_row(str(i+1), f)
-    console.print(table)
-    choice = IntPrompt.ask("شماره فایل را وارد کنید", choices=[str(i+1) for i in range(len(files))])
+    text = Text()
+    for i, f in enumerate(files):
+        text.append(f"[{i+1}] {f}\n", style="cyan")
+    console.print(Panel(text, title="انتخاب دیتابیس", border_style="blue"))
+    choice = IntPrompt.ask("شماره فایل", choices=[str(i+1) for i in range(len(files))])
     return files[choice-1]
 
 def create_backup(db_path):
@@ -52,20 +59,19 @@ def create_backup(db_path):
     backup_path = f"{db_path}.backup_{timestamp}"
     try:
         shutil.copy(db_path, backup_path)
-        console.print(f"[green]✔ بکاپ امنیتی ایجاد شد :[/green] [dim]{backup_path}[/dim]")
+        console.print(f"[green]✔ بکاپ امنیتی:[/green] [dim]{backup_path}[/dim]")
     except Exception as e:
-        console.print(f"[bold red]❌ خطا در ایجاد بکاپ : {e}[/bold red]")
-        sys.exit(1)
+        console.print(f"[bold red]❌ خطا در بکاپ: {e}[/bold red]"); sys.exit(1)
 
 def restart_panel():
-    if Confirm.ask("\n[bold yellow]🔄 آیا پنل X-UI ریستارت شود؟[/bold yellow]"):
+    if Confirm.ask("\n[bold yellow]🔄 آیا پنل ریستارت شود؟[/bold yellow]"):
         try:
             with console.status("[bold green]در حال ریستارت سرویس...[/bold green]"):
                 cmd = "x-ui restart"
                 if shutil.which("x-ui") is None: cmd = "systemctl restart x-ui"
                 subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            console.print("[bold green]✔ پنل با موفقیت ریستارت شد[/bold green]")
-        except Exception as e: console.print(f"[bold red]❌ خطا در ریستارت : {e}[/bold red]")
+            console.print("[bold green]✔ انجام شد.[/bold green]")
+        except Exception as e: console.print(f"[bold red]❌ خطا: {e}[/bold red]")
 
 def get_real_usage_map(cursor):
     usage = {}
@@ -77,7 +83,7 @@ def get_real_usage_map(cursor):
     return usage
 
 def timestamp_to_date(ts):
-    if ts <= 0: return "[green]نامحدود[/green]"
+    if ts <= 0: return "نامحدود"
     return datetime.datetime.fromtimestamp(ts/1000).strftime('%Y-%m-%d')
 
 def bytes_to_gb(b):
@@ -86,47 +92,40 @@ def bytes_to_gb(b):
 
 def select_client_interactive(clients, real_usage):
     while True:
-        console.print(Panel("برای نمایش همه اینتر بزنید یا بخشی از ایمیل را بنویسید", title="جستجوی کلاینت", border_style="blue"))
-        search_query = Prompt.ask("جستجو").strip().lower()
+        console.print(Panel("برای نمایش همه اینتر بزنید یا بخشی از ایمیل را بنویسید", title="جستجو", border_style="blue"))
+        search_query = Prompt.ask("عبارت جستجو").strip().lower()
         
         filtered = []
         for idx, c in enumerate(clients):
             email = c.get('email', '')
-            if search_query in email.lower():
-                filtered.append((idx, c))
+            if search_query in email.lower(): filtered.append((idx, c))
         
         if not filtered:
-            console.print("[red]کاربری یافت نشد. دوباره تلاش کنید.[/red]")
-            continue
+            console.print("[red]یافت نشد.[/red]"); continue
 
-        table = Table(box=box.ROUNDED, show_header=True, header_style="bold magenta")
-        table.add_column("No.", justify="center", style="cyan")
-        table.add_column("ایمیل (Email)", justify="left", style="white", no_wrap=True)
-        table.add_column("تاریخ انقضا", justify="right", style="yellow")
-        table.add_column("مصرف/کل (GB)", justify="right", style="green")
-        table.add_column("وضعیت", justify="center")
+        list_text = Text()
+        list_text.append(f"{'ردیف'.center(4)} | {'وضعیت'.center(8)} | {'ایمیل'.ljust(30)} | {'انقضا'.center(12)} | {'مصرف'.center(15)}\n", style="bold white on black")
+        list_text.append("-" * 80 + "\n", style="dim")
 
         for local_idx, (real_idx, c) in enumerate(filtered):
             email = c.get('email', 'no-email')
             exp = timestamp_to_date(c.get('expiryTime', 0))
             u_val = real_usage.get(email, 0)
             t_val = c.get('totalGB', c.get('total', 0))
-            usage_str = f"{bytes_to_gb(u_val)} / {'∞' if t_val<=0 else bytes_to_gb(t_val)}"
-            enable_icon = "🟢" if c.get('enable') else "🔴"
-            table.add_row(str(local_idx + 1), email, exp, usage_str, enable_icon)
+            usage_str = f"{bytes_to_gb(u_val)}/{'∞' if t_val<=0 else bytes_to_gb(t_val)}"
+            status = "🟢 فعال" if c.get('enable') else "🔴 غیرفعال"
+            
+            row_style = "white" if local_idx % 2 == 0 else "dim white"
+            list_text.append(f"{str(local_idx+1).center(4)} | {status.center(8)} | {email.ljust(30)} | {exp.center(12)} | {usage_str.center(15)}\n", style=row_style)
 
         if len(filtered) > 15:
-            with console.pager(): console.print(table)
-        else: console.print(table)
+            with console.pager(): console.print(list_text)
+        else: console.print(list_text)
 
-        choice_str = Prompt.ask("\nشماره ردیف کاربر را وارد کنید (0 برای بازگشت)")
-        try:
-            choice = int(choice_str)
-            if choice == 0: return None
-            if 1 <= choice <= len(filtered):
-                return filtered[choice-1][1]
-            else: console.print("[red]شماره نامعتبر است.[/red]")
-        except: console.print("[red]ورودی نامعتبر است.[/red]")
+        choice = IntPrompt.ask("\nشماره ردیف (0 بازگشت)", default=0)
+        if choice == 0: return None
+        if 1 <= choice <= len(filtered): return filtered[choice-1][1]
+        else: console.print("[red]نامعتبر[/red]")
 
 def process_single_user_menu(client, usage_map):
     email = client['email']
@@ -135,26 +134,25 @@ def process_single_user_menu(client, usage_map):
     expiry = client.get('expiryTime', 0)
     enable = client.get('enable', False)
     
-    status_msg = "[bold green]فعال[/bold green]" if enable else "[bold red]غیرفعال[/bold red]"
-    if expiry > 0 and expiry < (time.time()*1000): status_msg += " [yellow](منقضی)[/yellow]"
-    if total > 0 and used >= total: status_msg += " [red](اتمام حجم)[/red]"
+    status_icon = "🟢 فعال" if enable else "🔴 غیرفعال"
+    if expiry > 0 and expiry < (time.time()*1000): status_icon += " (منقضی)"
+    if total > 0 and used >= total: status_icon += " (حجم تمام)"
 
-    console.print(Panel(
-        f"📧 ایمیل : [bold cyan]{email}[/bold cyan]\n"
-        f"📊 مصرف : [white]{bytes_to_gb(used)}[/white] / [green]{'نامحدود' if total<=0 else bytes_to_gb(total)}[/green] GB\n"
-        f"📅 انقضا : [yellow]{timestamp_to_date(expiry)}[/yellow]\n"
-        f"⚡ وضعیت : {status_msg}",
-        title="[bold white]مدیریت کلاینت[/bold white]", border_style="blue", padding=(1,2)
-    ))
+    info_text = Text()
+    info_text.append(f"📧 ایمیل : {email}\n", style="bold cyan")
+    info_text.append(f"📊 وضعیت : {status_icon}\n", style="bold white")
+    info_text.append(f"📅 انقضا : {timestamp_to_date(expiry)}\n", style="yellow")
+    info_text.append(f"💾 مصرف :  {bytes_to_gb(used)} / {'نامحدود' if total<=0 else bytes_to_gb(total)} GB", style="green")
 
+    console.print(Panel(info_text, title="مشخصات کاربر", border_style="blue"))
+    console.print("[1] تمدید زمان (+روز به انتهای فعلی)")
+    console.print("[2] احیا کردن (شروع از همین لحظه)")
+    console.print("[3] افزایش حجم (+گیگابایت)")
+    console.print("[4] ریست مصرف (صفر کردن)")
+    console.print("[5] تنظیم دستی مقادیر")
     console.print("[0] بازگشت")
-    console.print("[1] تمدید زمان (افزودن به انتهای زمان فعلی)")
-    console.print("[2] احیا کردن (افزودن زمان از همین لحظه)")
-    console.print("[3] افزایش حجم (افزودن به ترافیک کل)")
-    console.print("[4] ریست کردن ترافیک مصرفی (Reset Usage)")
-    console.print("[5] تنظیم مقادیر دستی (Set Custom)")
 
-    action = IntPrompt.ask("انتخاب کنید", choices=["0", "1", "2", "3", "4", "5"], default=0)
+    action = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3", "4", "5"], default=0)
     if action == 0: return None
     updates = {} 
 
@@ -165,19 +163,19 @@ def process_single_user_menu(client, usage_map):
             base = max(current_time, expiry) if expiry > 0 else current_time
             updates['expiryTime'] = base + (days * 86400000)
     elif action == 2:
-        days = IntPrompt.ask("تعداد روز اعتبار (از الان)")
+        days = IntPrompt.ask("روز اعتبار (از الان)")
         if days > 0: updates['expiryTime'] = int(time.time() * 1000) + (days * 86400000)
     elif action == 3:
-        gb = FloatPrompt.ask("مقدار گیگابایت برای افزودن")
+        gb = FloatPrompt.ask("گیگابایت افزودنی")
         if gb > 0:
             updates['totalGB'] = total + int(gb * 1073741824)
             updates['total'] = updates['totalGB']
     elif action == 4:
-        if Confirm.ask("آیا از ریست کردن مصرف مطمئن هستید؟"): updates['RESET_USAGE'] = True
+        if Confirm.ask("مطمئنید؟"): updates['RESET_USAGE'] = True
     elif action == 5:
-        new_days = IntPrompt.ask("اعتبار کل به روز (0=نامحدود)", default=-1)
+        new_days = IntPrompt.ask("روز اعتبار (0=نامحدود)", default=-1)
         if new_days >= 0: updates['expiryTime'] = 0 if new_days==0 else int(time.time()*1000) + (new_days*86400000)
-        new_gb = FloatPrompt.ask("حجم کل به GB (0=نامحدود)", default=-1.0)
+        new_gb = FloatPrompt.ask("حجم کل (0=نامحدود)", default=-1.0)
         if new_gb >= 0:
             updates['totalGB'] = int(new_gb * 1073741824)
             updates['total'] = updates['totalGB']
@@ -195,18 +193,15 @@ def main():
     real_usage = get_real_usage_map(cursor)
 
     try:
-        cursor.execute("SELECT id, remark, settings FROM inbounds")
+        cursor.execute("SELECT id, remark, port, protocol, settings FROM inbounds")
         inbounds = cursor.fetchall()
     except Exception as e:
-        console.print(f"[red]خطا در خواندن دیتابیس : {e}[/red]"); sys.exit(1)
+        console.print(f"[red]خطا: {e}[/red]"); sys.exit(1)
 
-    table = Table(title="منوی اصلی", box=box.ROUNDED, header_style="bold cyan")
-    table.add_column("گزینه", justify="center", style="cyan")
-    table.add_column("نام بخش", justify="right", style="white")
-    table.add_column("توضیحات / آمار", justify="right", style="green")
-    
-    table.add_row("0", "خروج", "بستن اسکریپت")
-    table.add_row("1", "همه اینباندها", "اعمال تغییرات روی کل سرور")
+    menu_text = Text()
+    menu_text.append("  [0] خروج از برنامه\n", style="bold red")
+    menu_text.append("  [1] 🌐 اعمال روی کل سرور (همه اینباندها)\n", style="bold green")
+    menu_text.append("  " + "-"*40 + "\n", style="dim")
     
     menu_map = {} 
     for idx, row in enumerate(inbounds):
@@ -214,27 +209,33 @@ def main():
         try:
             client_count = len(json.loads(row['settings']).get('clients', []))
         except: client_count = 0
-        table.add_row(str(menu_idx), row['remark'], f"تعداد کلاینت : {client_count}")
+        
+        proto = row['protocol']
+        icon = get_protocol_icon(proto)
+        line = f"  [{menu_idx}] {icon} {row['remark']}  [dim]({client_count} کاربر | پورت {row['port']})[/dim]\n"
+        menu_text.append(line, style="white")
         menu_map[menu_idx] = row['id']
         
-    console.print(table)
-    valid_choices = ["0", "1"] + [str(k) for k in menu_map.keys()]
-    main_choice = IntPrompt.ask("گزینه مورد نظر را انتخاب کنید", choices=valid_choices, default=0)
+    console.print(Panel(menu_text, title="لیست اینباندها", border_style="cyan", title_align="right"))
     
-    if main_choice == 0:
-        console.print("[yellow]خروج از برنامه...[/yellow]"); sys.exit(0)
+    valid_choices = ["0", "1"] + [str(k) for k in menu_map.keys()]
+    main_choice = IntPrompt.ask("انتخاب کنید", choices=valid_choices, default=0)
+    
+    if main_choice == 0: sys.exit(0)
     
     target_inbound_id = 0
     target_email = None
     
     if main_choice > 1:
         target_inbound_id = menu_map[main_choice]
-        console.print(Panel(f"مدیریت اینباند: [bold yellow]{next(r['remark'] for r in inbounds if r['id']==target_inbound_id)}[/bold yellow]", border_style="green"))
-        console.print("[0] بازگشت")
-        console.print("[1] اعمال روی کل کاربران این اینباند")
-        console.print("[2] جستجو و انتخاب یک کاربر خاص")
+        console.print(Panel(
+            "[1] اعمال گروهی روی همه کاربران\n"
+            "[2] جستجو و انتخاب کاربر خاص\n"
+            "[0] بازگشت",
+            title=f"مدیریت اینباند {target_inbound_id}", border_style="green"
+        ))
         
-        sub_choice = IntPrompt.ask("انتخاب کنید", choices=["0", "1", "2"], default=0)
+        sub_choice = IntPrompt.ask("انتخاب", choices=["0", "1", "2"], default=0)
         if sub_choice == 0: main(); return
         elif sub_choice == 2:
             target_row = next((r for r in inbounds if r['id'] == target_inbound_id), None)
@@ -247,27 +248,26 @@ def main():
     if target_email:
         final_client = None
         for row in inbounds:
-            if target_inbound_id != 0 and row['id'] != target_inbound_id:
-                continue
+            if target_inbound_id != 0 and row['id'] != target_inbound_id: continue
             cs = json.loads(row['settings']).get('clients', [])
             found = next((c for c in cs if c['email'] == target_email), None)
-            if found:
-                final_client = found
-                break
+            if found: final_client = found; break
         if final_client:
             bulk_updates = process_single_user_menu(final_client, real_usage)
             if not bulk_updates: main(); return
-        else: console.print("[red]کلاینت یافت نشد![/red]"); sys.exit(1)
+        else: console.print("[red]کلاینت گم شد![/red]"); sys.exit(1)
     else:
+        console.print("\n[bold cyan]--- تنظیمات گروهی ---[/bold cyan]")
+        
+        console.print("[bold yellow]🕒 سناریو زمان :[/bold yellow]")
+        console.print(" [0] بدون تغییر | [1] همه | [2] فقط فعال‌ها | [3] فقط منقضی‌ها")
+        time_scenario = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3"], default=0)
+        days_to_add = IntPrompt.ask(" >> تعداد روز", default=30) if time_scenario != 0 else 0
 
-        console.print(Panel("تنظیمات گروهی (Bulk Actions)", border_style="cyan"))
-        console.print("\n[bold]🕒 زمان:[/bold] [0]بدون تغییر | [1]همه | [2]فقط فعال‌ها | [3]فقط منقضی‌ها(احیا)")
-        time_scenario = IntPrompt.ask("انتخاب سناریو", choices=["0", "1", "2", "3"], default=0)
-        days_to_add = IntPrompt.ask("تعداد روز برای افزودن", default=30) if time_scenario != 0 else 0
-
-        console.print("\n[bold]💾 حجم:[/bold] [0]بدون تغییر | [1]همه | [2]فقط اتمام حجم شده‌ها | [3]فقط حجم‌دارها")
-        traffic_scenario = IntPrompt.ask("انتخاب سناریو", choices=["0", "1", "2", "3"], default=0)
-        gb_to_add = FloatPrompt.ask("مقدار GB برای افزودن", default=0.0) if traffic_scenario != 0 else 0
+        console.print("\n[bold yellow]💾 سناریو حجم :[/bold yellow]")
+        console.print(" [0] بدون تغییر | [1] همه | [2] فقط تمام شده‌ها | [3] فقط حجم‌دارها")
+        traffic_scenario = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3"], default=0)
+        gb_to_add = FloatPrompt.ask(" >> مقدار گیگابایت", default=0.0) if traffic_scenario != 0 else 0
 
     ms_to_add = days_to_add * 86400000
     bytes_to_add = int(gb_to_add * 1073741824)
@@ -278,8 +278,8 @@ def main():
     reset_usage_list = []
     stats = {'processed': 0, 'enabled': 0}
 
-    with Progress(SpinnerColumn(), BarColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-        task = progress.add_task("در حال پردازش داده‌ها...", total=len(inbounds))
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn()) as progress:
+        task = progress.add_task("پردازش...", total=len(inbounds))
         for row in inbounds:
             if target_inbound_id != 0 and row['id'] != target_inbound_id:
                 progress.advance(task); continue
@@ -289,8 +289,7 @@ def main():
                 modified = False
                 for client in clients:
                     email = client.get('email')
-                    if not email or (target_email and email != target_email):
-                        continue
+                    if not email or (target_email and email != target_email): continue
 
                     if target_email and bulk_updates:
                         if 'expiryTime' in bulk_updates: client['expiryTime'] = bulk_updates['expiryTime']; modified = True
@@ -298,7 +297,6 @@ def main():
                             client['totalGB'] = bulk_updates['totalGB']
                             client['total'] = bulk_updates['totalGB']; modified = True
                         if 'RESET_USAGE' in bulk_updates: reset_usage_list.append(email)
-                    
                     elif not target_email:
                         expiry = client.get('expiryTime', 0)
                         is_expired = 0 < expiry < current_time
@@ -306,12 +304,10 @@ def main():
                         used = real_usage.get(email, 0)
                         is_depleted = total > 0 and used >= total
                         
-
                         if time_scenario == 1 or (time_scenario == 2 and not is_expired) or (time_scenario == 3 and is_expired):
                             base = current_time if (is_expired and time_scenario != 2) else expiry
                             client['expiryTime'] = (base if base > 0 else current_time) + ms_to_add
                             modified = True
-
                         if traffic_scenario == 1 or (traffic_scenario == 2 and is_depleted) or (traffic_scenario == 3 and not is_depleted):
                             if total > 0:
                                 client['totalGB'] = total + bytes_to_add
@@ -320,7 +316,10 @@ def main():
                     new_exp = client.get('expiryTime', 0)
                     new_tot = client.get('totalGB', client.get('total', 0))
                     curr_used = 0 if email in reset_usage_list else real_usage.get(email, 0)
-                    if ((new_exp <= 0 or new_exp > current_time) and (new_tot <= 0 or curr_used < new_tot)) and not client.get('enable'):
+                    time_ok = (new_exp <= 0) or (new_exp > current_time)
+                    traffic_ok = (new_tot <= 0) or (curr_used < new_tot)
+                    
+                    if time_ok and traffic_ok and not client.get('enable'):
                         client['enable'] = True
                         stats['enabled'] += 1; modified = True
                     
@@ -328,18 +327,19 @@ def main():
                         sql_updates.append((client['expiryTime'], new_tot, 1 if client.get('enable') else 0, email))
                         stats['processed'] += 1
                 if modified: inbound_json_updates[row['id']] = json.dumps(settings)
-            except:
-                pass
+            except: pass
             progress.advance(task)
 
     if stats['processed'] == 0 and not reset_usage_list:
-        console.print("[yellow]⚠️ هیچ تغییری برای اعمال یافت نشد.[/yellow]"); sys.exit(0)
+        console.print("[yellow]تغییری اعمال نشد.[/yellow]"); sys.exit(0)
 
-    console.print(Panel(f"تعداد کاربران تغییر یافته: [bold green]{stats['processed']}[/bold green]\n"
-                        f"تعداد فعال‌سازی‌های جدید: [bold yellow]{stats['enabled']}[/bold yellow]\n"
-                        f"تعداد ریست مصرف: [bold cyan]{len(reset_usage_list)}[/bold cyan]", title="گزارش عملیات"))
+    report = Text()
+    report.append(f"تعداد تغییرات : {stats['processed']}\n", style="green")
+    report.append(f"فعال‌سازی مجدد : {stats['enabled']}\n", style="yellow")
+    report.append(f"ریست مصرف : {len(reset_usage_list)}", style="cyan")
+    console.print(Panel(report, title="گزارش نهایی", border_style="green"))
     
-    if Confirm.ask("آیا تغییرات در دیتابیس ذخیره شوند؟"):
+    if Confirm.ask("ذخیره در دیتابیس ؟"):
         try:
             for iid, js in inbound_json_updates.items(): cursor.execute("UPDATE inbounds SET settings = ? WHERE id = ?", (js, iid))
             cursor.executemany("UPDATE client_traffics SET expiry_time=?, total=?, enable=? WHERE email=?", sql_updates)
@@ -347,13 +347,12 @@ def main():
                 placeholders = ','.join('?' for _ in reset_usage_list)
                 cursor.execute(f"UPDATE client_traffics SET up=0, down=0 WHERE email IN ({placeholders})", reset_usage_list)
             conn.commit()
-            console.print("[bold green]✔ دیتابیس با موفقیت آپدیت شد![/bold green]")
+            console.print("[bold green]✔ موفقیت آمیز بود ![/bold green]")
             restart_panel()
-        except sqlite3.Error as e:
-            console.print(f"[bold red]❌ خطای دیتابیس: {e}[/bold red]"); conn.rollback()
-        finally:
-            conn.close()
+        except Exception as e:
+            console.print(f"[bold red]❌ خطا : {e}[/bold red]"); conn.rollback()
+        finally: conn.close()
 
 if __name__ == "__main__":
     try: main()
-    except KeyboardInterrupt: console.print("\n[yellow]خروج از برنامه.[/yellow]")
+    except KeyboardInterrupt: console.print("\n[yellow]خروج.[/yellow]")
