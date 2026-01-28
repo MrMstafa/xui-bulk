@@ -14,8 +14,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-from rich.layout import Layout
-from rich.text import Text
 from rich import box
 
 # --- تنظیمات ---
@@ -27,8 +25,8 @@ def clear_screen():
 
 def print_header():
     console.print(Panel(
-        Text("مدیریت هوشمند کاربران X-UI (نسخه حرفه‌ای)", justify="center", style="bold cyan"),
-        subtitle="[dim]طراحی شده برای پنل‌های سنایی و علیرضا[/dim]",
+        "[bold cyan]X-UI Bulk Smart Manager[/bold cyan]",
+        subtitle="[dim]مدیریت هوشمند کاربران[/dim]",
         border_style="green",
         padding=(0, 2)
     ))
@@ -44,13 +42,13 @@ def find_database():
     if os.path.exists(DEFAULT_DB_PATH): return DEFAULT_DB_PATH
     files = [f for f in os.listdir('.') if f.endswith('.db')]
     if not files:
-        console.print("[bold red]❌ دیتابیس یافت نشد![/bold red]")
+        console.print("[bold red]❌ دیتابیس یافت نشد ![/bold red]")
         sys.exit(1)
     if len(files) == 1: return files[0]
-    text = Text()
+    
+    console.print(f"[yellow]چند فایل پیدا شد. لطفا انتخاب کنید :[/yellow]")
     for i, f in enumerate(files):
-        text.append(f"[{i+1}] {f}\n", style="cyan")
-    console.print(Panel(text, title="انتخاب دیتابیس", border_style="blue"))
+        console.print(f"[{i+1}] {f}")
     choice = IntPrompt.ask("شماره فایل", choices=[str(i+1) for i in range(len(files))])
     return files[choice-1]
 
@@ -59,9 +57,9 @@ def create_backup(db_path):
     backup_path = f"{db_path}.backup_{timestamp}"
     try:
         shutil.copy(db_path, backup_path)
-        console.print(f"[green]✔ بکاپ امنیتی:[/green] [dim]{backup_path}[/dim]")
+        console.print(f"[green]✔ بکاپ گرفته شد :[/green] [dim]{backup_path}[/dim]")
     except Exception as e:
-        console.print(f"[bold red]❌ خطا در بکاپ: {e}[/bold red]"); sys.exit(1)
+        console.print(f"[bold red]❌ خطا در بکاپ : {e}[/bold red]"); sys.exit(1)
 
 def restart_panel():
     if Confirm.ask("\n[bold yellow]🔄 آیا پنل ریستارت شود؟[/bold yellow]"):
@@ -92,8 +90,8 @@ def bytes_to_gb(b):
 
 def select_client_interactive(clients, real_usage):
     while True:
-        console.print(Panel("برای نمایش همه اینتر بزنید یا بخشی از ایمیل را بنویسید", title="جستجو", border_style="blue"))
-        search_query = Prompt.ask("عبارت جستجو").strip().lower()
+        console.print(Panel("اینتر بزنید تا همه نمایش داده شوند یا جستجو کنید", title="جستجو", border_style="blue"))
+        search_query = Prompt.ask("جستجو").strip().lower()
         
         filtered = []
         for idx, c in enumerate(clients):
@@ -103,9 +101,13 @@ def select_client_interactive(clients, real_usage):
         if not filtered:
             console.print("[red]یافت نشد.[/red]"); continue
 
-        list_text = Text()
-        list_text.append(f"{'ردیف'.center(4)} | {'وضعیت'.center(8)} | {'ایمیل'.ljust(30)} | {'انقضا'.center(12)} | {'مصرف'.center(15)}\n", style="bold white on black")
-        list_text.append("-" * 80 + "\n", style="dim")
+        # ساخت جدول ساده
+        table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
+        table.add_column("#", justify="center", width=4)
+        table.add_column("ایمیل", justify="left", style="white")
+        table.add_column("انقضا", justify="center", style="yellow")
+        table.add_column("حجم", justify="right", style="green")
+        table.add_column("وضعیت", justify="center")
 
         for local_idx, (real_idx, c) in enumerate(filtered):
             email = c.get('email', 'no-email')
@@ -113,19 +115,17 @@ def select_client_interactive(clients, real_usage):
             u_val = real_usage.get(email, 0)
             t_val = c.get('totalGB', c.get('total', 0))
             usage_str = f"{bytes_to_gb(u_val)}/{'∞' if t_val<=0 else bytes_to_gb(t_val)}"
-            status = "🟢 فعال" if c.get('enable') else "🔴 غیرفعال"
+            status = "🟢" if c.get('enable') else "🔴"
             
-            row_style = "white" if local_idx % 2 == 0 else "dim white"
-            list_text.append(f"{str(local_idx+1).center(4)} | {status.center(8)} | {email.ljust(30)} | {exp.center(12)} | {usage_str.center(15)}\n", style=row_style)
+            table.add_row(str(local_idx+1), email, exp, usage_str, status)
 
-        if len(filtered) > 15:
-            with console.pager(): console.print(list_text)
-        else: console.print(list_text)
+        console.print(table)
+        console.print(f"[dim]تعداد نتایج: {len(filtered)}[/dim]")
 
         choice = IntPrompt.ask("\nشماره ردیف (0 بازگشت)", default=0)
         if choice == 0: return None
         if 1 <= choice <= len(filtered): return filtered[choice-1][1]
-        else: console.print("[red]نامعتبر[/red]")
+        else: console.print("[red]شماره نامعتبر[/red]")
 
 def process_single_user_menu(client, usage_map):
     email = client['email']
@@ -135,21 +135,19 @@ def process_single_user_menu(client, usage_map):
     enable = client.get('enable', False)
     
     status_icon = "🟢 فعال" if enable else "🔴 غیرفعال"
-    if expiry > 0 and expiry < (time.time()*1000): status_icon += " (منقضی)"
-    if total > 0 and used >= total: status_icon += " (حجم تمام)"
+    
+    console.print(Panel(
+        f"📧 {email}\n"
+        f"📊 {status_icon} | 📅 {timestamp_to_date(expiry)}\n"
+        f"💾 {bytes_to_gb(used)} / {'∞' if total<=0 else bytes_to_gb(total)} GB",
+        title="مشخصات کاربر", border_style="blue"
+    ))
 
-    info_text = Text()
-    info_text.append(f"📧 ایمیل : {email}\n", style="bold cyan")
-    info_text.append(f"📊 وضعیت : {status_icon}\n", style="bold white")
-    info_text.append(f"📅 انقضا : {timestamp_to_date(expiry)}\n", style="yellow")
-    info_text.append(f"💾 مصرف :  {bytes_to_gb(used)} / {'نامحدود' if total<=0 else bytes_to_gb(total)} GB", style="green")
-
-    console.print(Panel(info_text, title="مشخصات کاربر", border_style="blue"))
-    console.print("[1] تمدید زمان (+روز به انتهای فعلی)")
-    console.print("[2] احیا کردن (شروع از همین لحظه)")
-    console.print("[3] افزایش حجم (+گیگابایت)")
-    console.print("[4] ریست مصرف (صفر کردن)")
-    console.print("[5] تنظیم دستی مقادیر")
+    console.print("[1] تمدید زمان (+روز)")
+    console.print("[2] احیا کردن (شروع از الان)")
+    console.print("[3] افزایش حجم (+GB)")
+    console.print("[4] ریست مصرف")
+    console.print("[5] تنظیم دستی")
     console.print("[0] بازگشت")
 
     action = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3", "4", "5"], default=0)
@@ -198,35 +196,34 @@ def main():
     except Exception as e:
         console.print(f"[red]خطا: {e}[/red]"); sys.exit(1)
 
-    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", pad_edge=False, collapse_padding=True)
-    table.add_column("گزینه", justify="center", style="bold yellow", width=6)
-    table.add_column("نام اینباند / بخش", justify="right", style="white", width=30)
-    table.add_column("جزئیات (پورت | کاربر)", justify="right", style="green", width=25)
-    table.add_row("0", "خروج از برنامه", "---")
-    table.add_row("1", "اعمال روی کل سرور", "همه اینباندها")
-    table.add_section() # خط جداکننده
-    
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
+    table.add_column("کد", justify="center", style="bold yellow")
+    table.add_column("نام اینباند", justify="right", style="white")
+    table.add_column("جزئیات", justify="right", style="green")
+
+    table.add_row("0", "خروج", "---")
+    table.add_row("1", "همه اینباندها", "کل سرور")
+    table.add_section()
+
     menu_map = {} 
     for idx, row in enumerate(inbounds):
         menu_idx = idx + 2
         try:
             client_count = len(json.loads(row['settings']).get('clients', []))
         except: client_count = 0
-
+        
         icon = get_protocol_icon(row['protocol'])
         
-        table.add_row(
-            str(menu_idx), 
-            f"{icon} {row['remark']}", 
-            f"Port: {row['port']} | {client_count} User"
-        )
+        remark_str = f"{icon} {row['remark']}"
+        detail_str = f"Port: {row['port']} | {client_count} User"
+        
+        table.add_row(str(menu_idx), remark_str, detail_str)
         menu_map[menu_idx] = row['id']
         
-    console.print(Panel(table, title="[bold white]منوی اصلی مدیریت[/bold white]", border_style="cyan", padding=(1, 1)))
+    console.print(Panel(table, title="منوی اصلی", border_style="cyan"))
     
     valid_choices = ["0", "1"] + [str(k) for k in menu_map.keys()]
-    console.print(f"[bold cyan] انتخاب کنید [0/{len(valid_choices)-1}][/bold cyan]", end="")
-    main_choice = IntPrompt.ask("", choices=valid_choices, default=0)
+    main_choice = IntPrompt.ask("گزینه مورد نظر", choices=valid_choices, default=0)
     
     if main_choice == 0: sys.exit(0)
     
@@ -235,12 +232,10 @@ def main():
     
     if main_choice > 1:
         target_inbound_id = menu_map[main_choice]
-        console.print(Panel(
-            "[1] اعمال گروهی روی همه کاربران\n"
-            "[2] جستجو و انتخاب کاربر خاص\n"
-            "[0] بازگشت",
-            title=f"مدیریت اینباند {target_inbound_id}", border_style="green"
-        ))
+        console.print(f"\n[bold green]--- مدیریت اینباند {target_inbound_id} ---[/bold green]")
+        console.print("[1] اعمال گروهی (همه کاربران)")
+        console.print("[2] انتخاب کاربر خاص")
+        console.print("[0] بازگشت")
         
         sub_choice = IntPrompt.ask("انتخاب", choices=["0", "1", "2"], default=0)
         if sub_choice == 0: main(); return
@@ -264,17 +259,23 @@ def main():
             if not bulk_updates: main(); return
         else: console.print("[red]کلاینت گم شد![/red]"); sys.exit(1)
     else:
-        console.print("\n[bold cyan]--- تنظیمات گروهی ---[/bold cyan]")
+        console.print(Panel("تنظیمات گروهی (Bulk Actions)", border_style="cyan"))
         
         console.print("[bold yellow]🕒 سناریو زمان :[/bold yellow]")
-        console.print(" [0] بدون تغییر | [1] همه | [2] فقط فعال‌ها | [3] فقط منقضی‌ها")
+        console.print("[0] بدون تغییر")
+        console.print("[1] همه")
+        console.print("[2] فقط تمدید فعال‌ها")
+        console.print("[3] فقط احیای منقضی‌ها")
         time_scenario = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3"], default=0)
         days_to_add = IntPrompt.ask(" >> تعداد روز", default=30) if time_scenario != 0 else 0
 
         console.print("\n[bold yellow]💾 سناریو حجم :[/bold yellow]")
-        console.print(" [0] بدون تغییر | [1] همه | [2] فقط تمام شده‌ها | [3] فقط حجم‌دارها")
+        console.print("[0] بدون تغییر")
+        console.print("[1] همه")
+        console.print("[2] فقط تمام شده‌ها")
+        console.print("[3] فقط حجم‌دارها")
         traffic_scenario = IntPrompt.ask("انتخاب", choices=["0", "1", "2", "3"], default=0)
-        gb_to_add = FloatPrompt.ask(" >> مقدار گیگابایت", default=0.0) if traffic_scenario != 0 else 0
+        gb_to_add = FloatPrompt.ask(" >> مقدار GB", default=0.0) if traffic_scenario != 0 else 0
 
     ms_to_add = days_to_add * 86400000
     bytes_to_add = int(gb_to_add * 1073741824)
@@ -323,6 +324,7 @@ def main():
                     new_exp = client.get('expiryTime', 0)
                     new_tot = client.get('totalGB', client.get('total', 0))
                     curr_used = 0 if email in reset_usage_list else real_usage.get(email, 0)
+                    
                     time_ok = (new_exp <= 0) or (new_exp > current_time)
                     traffic_ok = (new_tot <= 0) or (curr_used < new_tot)
                     
@@ -340,11 +342,10 @@ def main():
     if stats['processed'] == 0 and not reset_usage_list:
         console.print("[yellow]تغییری اعمال نشد.[/yellow]"); sys.exit(0)
 
-    report = Text()
-    report.append(f"تعداد تغییرات : {stats['processed']}\n", style="green")
-    report.append(f"فعال‌سازی مجدد : {stats['enabled']}\n", style="yellow")
-    report.append(f"ریست مصرف : {len(reset_usage_list)}", style="cyan")
-    console.print(Panel(report, title="گزارش نهایی", border_style="green"))
+    console.print(Panel(
+        f"تغییرات : {stats['processed']} | فعال‌سازی : {stats['enabled']} | ریست مصرف : {len(reset_usage_list)}",
+        title="گزارش", border_style="green"
+    ))
     
     if Confirm.ask("ذخیره در دیتابیس ؟"):
         try:
@@ -354,7 +355,7 @@ def main():
                 placeholders = ','.join('?' for _ in reset_usage_list)
                 cursor.execute(f"UPDATE client_traffics SET up=0, down=0 WHERE email IN ({placeholders})", reset_usage_list)
             conn.commit()
-            console.print("[bold green]✔ موفقیت آمیز بود ![/bold green]")
+            console.print("[bold green]✔ موفق ![/bold green]")
             restart_panel()
         except Exception as e:
             console.print(f"[bold red]❌ خطا : {e}[/bold red]"); conn.rollback()
